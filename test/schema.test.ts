@@ -2,7 +2,6 @@ import * as Ajv from "ajv";
 import { assert } from "chai";
 import { readFileSync } from "fs";
 import { resolve } from "path";
-import { CompilerOptions } from "typescript";
 
 import * as TJS from "../typescript-json-schema";
 
@@ -13,7 +12,7 @@ ajv.addMetaSchema(metaSchema, "http://json-schema.org/draft-04/schema#");
 
 const BASE = "test/programs/";
 
-export function assertSchema(group: string, type: string, settings: TJS.PartialArgs = {}, compilerOptions?: CompilerOptions) {
+export function assertSchema(group: string, type: string, settings: TJS.PartialArgs = {}, compilerOptions?: TJS.CompilerOptions) {
     it(group + " should create correct schema", () => {
         if (!("required" in settings)) {
             settings.required = true;
@@ -71,6 +70,7 @@ describe("schema", () => {
 
     describe("type aliases", () => {
         assertSchema("type-alias-single", "MyString");
+        assertSchema("type-alias-single-annotated", "MyString");
         assertSchema("type-aliases", "MyObject", {
             aliasRef: true
         });
@@ -138,6 +138,7 @@ describe("schema", () => {
         assertSchema("annotation-default", "MyObject");
         assertSchema("annotation-ref", "MyObject");
         assertSchema("annotation-tjs", "MyObject");
+        assertSchema("annotation-id", "MyObject");
 
         assertSchema("typeof-keyword", "MyObject", {typeOfKeyword: true});
 
@@ -227,5 +228,9 @@ describe("schema", () => {
         assertSchema("imports", "MyObject");
 
         assertSchema("generate-all-types", "*");
+
+        assertSchema("private-members", "MyObject", {
+            excludePrivate: true
+        });
     });
 });

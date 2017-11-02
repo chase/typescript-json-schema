@@ -2,13 +2,14 @@ import * as glob from "glob";
 import * as stringify from "json-stable-stringify";
 import * as path from "path";
 import * as ts from "typescript";
+export { Program, CompilerOptions } from "typescript";
 
 
 const vm = require("vm");
 
 const REGEX_FILE_NAME = /".*"\./;
 const REGEX_TSCONFIG_NAME = /^.*\.json$/;
-const REGEX_TJS_JSDOC = /^-([\w]+)\s([\w-]+)/g;
+const REGEX_TJS_JSDOC = /^-([\w]+)\s+(\S|\S[\s\S]*\S)\s*$/g;
 
 export function getDefaultArgs(): Args {
     return {
@@ -25,6 +26,7 @@ export function getDefaultArgs(): Args {
         ignoreErrors: false,
         out: "",
         validationKeywords: [],
+        excludePrivate: false,
     };
 }
 
@@ -46,6 +48,7 @@ export type Args = {
     ignoreErrors: boolean;
     out: string;
     validationKeywords: string[];
+    excludePrivate: boolean;
 };
 
 export type PartialArgs = Partial<Args>;
@@ -62,10 +65,10 @@ export type Definition = {
     type?: string | string[],
     definitions?: {[key: string]: any},
     format?: string,
-    items?: Definition | Array<Definition>,
+    items?: Definition | Definition[],
     minItems?: number,
     additionalItems?: {
-        anyOf: Array<Definition>
+        anyOf: Definition[]
     },
     enum?: PrimitiveType[] | Definition[],
     default?: PrimitiveType | Object,
@@ -156,11 +159,12 @@ export class JsonSchemaGenerator {
         description: true,
         format: true,
         default: true,
-        $ref: true
+        $ref: true,
+        id: true
     };
 
     private allSymbols: { [name: string]: ts.Type };
-    private userSymbols: { [name: string]: ts.Type };
+    private userSymbols: { [name: string]: ts.Symbol };
     private inheritingTypes: { [baseName: string]: string[] };
     private tc: ts.TypeChecker;
 
@@ -172,7 +176,7 @@ export class JsonSchemaGenerator {
 
     constructor(
       allSymbols: { [name: string]: ts.Type },
-      userSymbols: { [name: string]: ts.Type },
+      userSymbols: { [name: string]: ts.Symbol },
       inheritingTypes: { [baseName: string]: string[] },
       tc: ts.TypeChecker,
       private args = getDefaultArgs(),
@@ -232,15 +236,18 @@ export class JsonSchemaGenerator {
     }
 
     private extractLiteralValue(typ: ts.Type): PrimitiveType | undefined {
+        let str = (<ts.LiteralType>typ).value;
+        if (str === undefined) {
+            str = (typ as any).text;
+        }
         if (typ.flags & ts.TypeFlags.EnumLiteral) {
             // or .text for old TS
-            let str = (<ts.LiteralType>typ).value || (typ as any).text;
-            let num = parseFloat(str);
+            let num = parseFloat(str as string);
             return isNaN(num) ? str : num;
         } else if (typ.flags & ts.TypeFlags.StringLiteral) {
-            return (<ts.LiteralType>typ).value || (typ as any).text;
+            return str;
         } else if (typ.flags & ts.TypeFlags.NumberLiteral) {
-            return parseFloat((<ts.LiteralType>typ).value || (typ as any).text);
+            return parseFloat(str as string);
         } else if (typ.flags & ts.TypeFlags.BooleanLiteral) {
             return (typ as any).intrinsicName === "true";
         }
@@ -343,6 +350,7 @@ export class JsonSchemaGenerator {
         const reffedType = this.getReferencedTypeSymbol(prop, tc);
 
         let definition = this.getTypeDefinition(propertyType, tc, undefined, undefined, prop, reffedType);
+
         // if (this.args.titles) {
         //     definition.title = propertyName;
         // }
@@ -382,9 +390,9 @@ export class JsonSchemaGenerator {
     private getEnumDefinition(clazzType: ts.Type, tc: ts.TypeChecker, definition: Definition): Definition {
         const node = clazzType.getSymbol()!.getDeclarations()![0];
         const fullName = tc.typeToString(clazzType, undefined, ts.TypeFormatFlags.UseFullyQualifiedType);
-        const members: ts.EnumMember[] = node.kind === ts.SyntaxKind.EnumDeclaration ?
+        const members: ts.NodeArray<ts.EnumMember> = node.kind === ts.SyntaxKind.EnumDeclaration ?
             (node as ts.EnumDeclaration).members :
-            [node as ts.EnumMember];
+            ts.createNodeArray([node as ts.EnumMember]);
         var enumValues: (number|boolean|string|null)[] = [];
         let enumTypes: string[] = [];
 
@@ -532,7 +540,17 @@ export class JsonSchemaGenerator {
         }
 
         const clazz = <ts.ClassDeclaration>node;
-        const props = tc.getPropertiesOfType(clazzType);
+        const props = tc.getPropertiesOfType(clazzType).filter(prop => {
+            if (!this.args.excludePrivate) {
+                return true;
+            }
+
+            let decls = prop.declarations;
+            return !(decls && decls.filter(decl => {
+                let mods = decl.modifiers;
+                return mods && mods.filter(mod => mod.kind === ts.SyntaxKind.PrivateKeyword).length > 0;
+            }).length > 0);
+        });
         const fullName = tc.typeToString(clazzType, undefined, ts.TypeFormatFlags.UseFullyQualifiedType);
 
         const modifierFlags = ts.getCombinedModifierFlags(node);
@@ -701,7 +719,7 @@ export class JsonSchemaGenerator {
         return name;
     }
 
-    private getTypeDefinition(typ: ts.Type, tc: ts.TypeChecker, asRef = this.args.ref, unionModifier: string = "anyOf", prop?: ts.Symbol, reffedType?: ts.Symbol): Definition {
+    private getTypeDefinition(typ: ts.Type, tc: ts.TypeChecker, asRef = this.args.ref, unionModifier: string = "anyOf", prop?: ts.Symbol, reffedType?: ts.Symbol, pairedSymbol?: ts.Symbol): Definition {
         const definition: Definition = {}; // real definition
 
         if (this.args.typeOfKeyword && (typ.flags & ts.TypeFlags.Object) && ((<ts.ObjectType>typ).objectFlags & ts.ObjectFlags.Anonymous)) {
@@ -790,10 +808,13 @@ export class JsonSchemaGenerator {
                         }
                     }
                 } else if (isRawType) {
+                    if (pairedSymbol) {
+                        this.parseCommentsIntoDefinition(pairedSymbol, definition, {});
+                    }
                     this.getDefinitionForRootType(typ, tc, reffedType!, definition);
                 } else if (node && (node.kind === ts.SyntaxKind.EnumDeclaration || node.kind === ts.SyntaxKind.EnumMember)) {
                     this.getEnumDefinition(typ, tc, definition);
-                } else if (symbol && symbol.flags & ts.SymbolFlags.TypeLiteral && Object.keys(symbol.members).length === 0) {
+                } else if (symbol && symbol.flags & ts.SymbolFlags.TypeLiteral && symbol.members!.size === 0) {
                     // {} is TypeLiteral with no members. Need special case because it doesn't have declarations.
                     definition.type = "object";
                     definition.properties = {};
@@ -818,7 +839,7 @@ export class JsonSchemaGenerator {
         if(!this.allSymbols[symbolName]) {
             throw `type ${symbolName} not found`;
         }
-        let def = this.getTypeDefinition(this.allSymbols[symbolName], this.tc, this.args.topRef);
+        let def = this.getTypeDefinition(this.allSymbols[symbolName], this.tc, this.args.topRef, undefined, undefined, undefined, this.userSymbols[symbolName] || undefined);
 
         if (this.args.ref && includeReffedDefinitions && Object.keys(this.reffedDefinitions).length > 0) {
             def.definitions = this.reffedDefinitions;
@@ -827,14 +848,14 @@ export class JsonSchemaGenerator {
         return def;
     }
 
-    public getSchemaForSymbols(symbols: string[]): Definition {
+    public getSchemaForSymbols(symbolNames: string[]): Definition {
         const root = {
             $schema: "http://json-schema.org/draft-04/schema#",
             definitions: {}
         };
-        for (let i = 0; i < symbols.length; i++) {
-            const symbol = symbols[i];
-            root.definitions[symbol] = this.getTypeDefinition(this.userSymbols[symbol], this.tc, this.args.topRef);
+        for (let i = 0; i < symbolNames.length; i++) {
+            const symbolName = symbolNames[i];
+            root.definitions[symbolName] = this.getTypeDefinition(this.allSymbols[symbolName], this.tc, this.args.topRef, undefined, undefined, undefined, this.userSymbols[symbolName]);
         }
         return root;
     }
@@ -847,7 +868,7 @@ export class JsonSchemaGenerator {
         const files = program.getSourceFiles().filter(file => !file.isDeclarationFile);
         if (files.length) {
             return Object.keys(this.userSymbols).filter((key) => {
-                const symbol = this.userSymbols[key].getSymbol();
+                const symbol = this.userSymbols[key];
                 if (!symbol || !symbol.declarations || !symbol.declarations.length) {
                     return false;
                 }
@@ -892,7 +913,7 @@ export function buildGenerator(program: ts.Program, args: PartialArgs = {}): Jso
     if (diagnostics.length === 0 || args.ignoreErrors) {
 
         const allSymbols: { [name: string]: ts.Type } = {};
-        const userSymbols: { [name: string]: ts.Type } = {};
+        const userSymbols: { [name: string]: ts.Symbol } = {};
         const inheritingTypes: { [baseName: string]: string[] } = {};
 
         program.getSourceFiles().forEach((sourceFile, _sourceFileIdx) => {
@@ -918,7 +939,7 @@ export function buildGenerator(program: ts.Program, args: PartialArgs = {}): Jso
 
                     // if (sourceFileIdx === 1) {
                     if (!sourceFile.hasNoDefaultLib) {
-                        userSymbols[fullName] = nodeType;
+                        userSymbols[fullName] = symbol;
                     }
 
                     const baseTypes = nodeType.getBaseTypes() || [];
@@ -970,7 +991,7 @@ export function generateSchema(program: ts.Program, fullTypeName: string, args: 
 
 export function programFromConfig(configFileName: string): ts.Program {
     // basically a copy of https://github.com/Microsoft/TypeScript/blob/3663d400270ccae8b69cbeeded8ffdc8fa12d7ad/src/compiler/tsc.ts -> parseConfigFile
-    const result = ts.parseConfigFileTextToJson(configFileName, ts.sys.readFile(configFileName));
+    const result = ts.parseConfigFileTextToJson(configFileName, ts.sys.readFile(configFileName)!);
     const configObject = result.config;
 
     const configParseResult = ts.parseJsonConfigFileContent(configObject, ts.sys, path.dirname(configFileName), {}, configFileName);
@@ -1060,6 +1081,7 @@ export function run() {
         ignoreErrors: args.ignoreErrors,
         out: args.out,
         validationKeywords: args.validationKeywords,
+        excludePrivate: args.excludePrivate,
     });
 }
 

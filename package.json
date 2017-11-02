@@ -1,6 +1,6 @@
 {
   "name": "develar-typescript-json-schema",
-  "version": "0.17.0",
+  "version": "0.19.0",
   "description": "typescript-json-schema generates JSON Schema files from your Typescript sources",
   "main": "typescript-json-schema.js",
   "typings": "typescript-json-schema.d.ts",
@@ -21,6 +21,14 @@
       "name": "Dominik Moritz",
       "email": "domoritz@gmail.com",
       "url": "https://www.domoritz.de/"
+    },
+    {
+      "name": "Vladimir Krivosheev",
+      "email": "develar@gmail.com"
+    },
+    {
+      "name": "Fabian Pirklbauer",
+      "email": "hi@fabiandev.io"
     }
   ],
   "repository": {
@@ -43,7 +51,7 @@
   "dependencies": {
     "glob": "~7.1.2",
     "json-stable-stringify": "^1.0.1",
-    "typescript": "~2.4.1",
+    "typescript": "~2.5.3",
     "yargs": "^8.0.2"
   },
   "devDependencies": {

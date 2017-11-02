@@ -15,7 +15,7 @@ var ts = require("typescript");
 var vm = require("vm");
 var REGEX_FILE_NAME = /".*"\./;
 var REGEX_TSCONFIG_NAME = /^.*\.json$/;
-var REGEX_TJS_JSDOC = /^-([\w]+)\s([\w-]+)/g;
+var REGEX_TJS_JSDOC = /^-([\w]+)\s+(\S|\S[\s\S]*\S)\s*$/g;
 function getDefaultArgs() {
     return {
         ref: true,
@@ -31,6 +31,7 @@ function getDefaultArgs() {
         ignoreErrors: false,
         out: "",
         validationKeywords: [],
+        excludePrivate: false,
     };
 }
 exports.getDefaultArgs = getDefaultArgs;
@@ -125,16 +126,19 @@ var JsonSchemaGenerator = (function () {
         });
     };
     JsonSchemaGenerator.prototype.extractLiteralValue = function (typ) {
+        var str = typ.value;
+        if (str === undefined) {
+            str = typ.text;
+        }
         if (typ.flags & ts.TypeFlags.EnumLiteral) {
-            var str = typ.value || typ.text;
             var num = parseFloat(str);
             return isNaN(num) ? str : num;
         }
         else if (typ.flags & ts.TypeFlags.StringLiteral) {
-            return typ.value || typ.text;
+            return str;
         }
         else if (typ.flags & ts.TypeFlags.NumberLiteral) {
-            return parseFloat(typ.value || typ.text);
+            return parseFloat(str);
         }
         else if (typ.flags & ts.TypeFlags.BooleanLiteral) {
             return typ.intrinsicName === "true";
@@ -227,6 +231,9 @@ var JsonSchemaGenerator = (function () {
         var propertyType = tc.getTypeOfSymbolAtLocation(prop, node);
         var reffedType = this.getReferencedTypeSymbol(prop, tc);
         var definition = this.getTypeDefinition(propertyType, tc, undefined, undefined, prop, reffedType);
+        if (this.args.titles) {
+            definition.title = propertyName;
+        }
         if (definition.hasOwnProperty("ignore")) {
             return null;
         }
@@ -263,7 +270,7 @@ var JsonSchemaGenerator = (function () {
         var fullName = tc.typeToString(clazzType, undefined, ts.TypeFormatFlags.UseFullyQualifiedType);
         var members = node.kind === ts.SyntaxKind.EnumDeclaration ?
             node.members :
-            [node];
+            ts.createNodeArray([node]);
         var enumValues = [];
         var enumTypes = [];
         var addType = function (type) {
@@ -403,7 +410,16 @@ var JsonSchemaGenerator = (function () {
             return definition;
         }
         var clazz = node;
-        var props = tc.getPropertiesOfType(clazzType);
+        var props = tc.getPropertiesOfType(clazzType).filter(function (prop) {
+            if (!_this.args.excludePrivate) {
+                return true;
+            }
+            var decls = prop.declarations;
+            return !(decls && decls.filter(function (decl) {
+                var mods = decl.modifiers;
+                return mods && mods.filter(function (mod) { return mod.kind === ts.SyntaxKind.PrivateKeyword; }).length > 0;
+            }).length > 0);
+        });
         var fullName = tc.typeToString(clazzType, undefined, ts.TypeFormatFlags.UseFullyQualifiedType);
         var modifierFlags = ts.getCombinedModifierFlags(node);
         if (modifierFlags & ts.ModifierFlags.Abstract) {
@@ -546,7 +562,7 @@ var JsonSchemaGenerator = (function () {
         this.typeNamesUsed[name] = true;
         return name;
     };
-    JsonSchemaGenerator.prototype.getTypeDefinition = function (typ, tc, asRef, unionModifier, prop, reffedType) {
+    JsonSchemaGenerator.prototype.getTypeDefinition = function (typ, tc, asRef, unionModifier, prop, reffedType, pairedSymbol) {
         if (asRef === void 0) { asRef = this.args.ref; }
         if (unionModifier === void 0) { unionModifier = "anyOf"; }
         var definition = {};
@@ -620,12 +636,15 @@ var JsonSchemaGenerator = (function () {
                     }
                 }
                 else if (isRawType) {
+                    if (pairedSymbol) {
+                        this.parseCommentsIntoDefinition(pairedSymbol, definition, {});
+                    }
                     this.getDefinitionForRootType(typ, tc, reffedType, definition);
                 }
                 else if (node && (node.kind === ts.SyntaxKind.EnumDeclaration || node.kind === ts.SyntaxKind.EnumMember)) {
                     this.getEnumDefinition(typ, tc, definition);
                 }
-                else if (symbol && symbol.flags & ts.SymbolFlags.TypeLiteral && Object.keys(symbol.members).length === 0) {
+                else if (symbol && symbol.flags & ts.SymbolFlags.TypeLiteral && symbol.members.size === 0) {
                     definition.type = "object";
                     definition.properties = {};
                 }
@@ -647,21 +666,21 @@ var JsonSchemaGenerator = (function () {
         if (!this.allSymbols[symbolName]) {
             throw "type " + symbolName + " not found";
         }
-        var def = this.getTypeDefinition(this.allSymbols[symbolName], this.tc, this.args.topRef);
+        var def = this.getTypeDefinition(this.allSymbols[symbolName], this.tc, this.args.topRef, undefined, undefined, undefined, this.userSymbols[symbolName] || undefined);
         if (this.args.ref && includeReffedDefinitions && Object.keys(this.reffedDefinitions).length > 0) {
             def.definitions = this.reffedDefinitions;
         }
         def["$schema"] = "http://json-schema.org/draft-04/schema#";
         return def;
     };
-    JsonSchemaGenerator.prototype.getSchemaForSymbols = function (symbols) {
+    JsonSchemaGenerator.prototype.getSchemaForSymbols = function (symbolNames) {
         var root = {
             $schema: "http://json-schema.org/draft-04/schema#",
             definitions: {}
         };
-        for (var i = 0; i < symbols.length; i++) {
-            var symbol = symbols[i];
-            root.definitions[symbol] = this.getTypeDefinition(this.userSymbols[symbol], this.tc, this.args.topRef);
+        for (var i = 0; i < symbolNames.length; i++) {
+            var symbolName = symbolNames[i];
+            root.definitions[symbolName] = this.getTypeDefinition(this.allSymbols[symbolName], this.tc, this.args.topRef, undefined, undefined, undefined, this.userSymbols[symbolName]);
         }
         return root;
     };
@@ -673,7 +692,7 @@ var JsonSchemaGenerator = (function () {
         var files = program.getSourceFiles().filter(function (file) { return !file.isDeclarationFile; });
         if (files.length) {
             return Object.keys(this.userSymbols).filter(function (key) {
-                var symbol = _this.userSymbols[key].getSymbol();
+                var symbol = _this.userSymbols[key];
                 if (!symbol || !symbol.declarations || !symbol.declarations.length) {
                     return false;
                 }
@@ -707,7 +726,8 @@ var JsonSchemaGenerator = (function () {
         description: true,
         format: true,
         default: true,
-        $ref: true
+        $ref: true,
+        id: true
     };
     return JsonSchemaGenerator;
 }());
@@ -751,7 +771,7 @@ function buildGenerator(program, args) {
                     fullName_1 = fullName_1.replace(/".*"\./, "");
                     allSymbols_1[fullName_1] = nodeType;
                     if (!sourceFile.hasNoDefaultLib) {
-                        userSymbols_1[fullName_1] = nodeType;
+                        userSymbols_1[fullName_1] = symbol;
                     }
                     var baseTypes = nodeType.getBaseTypes() || [];
                     baseTypes.forEach(function (baseType) {
@@ -890,6 +910,7 @@ function run() {
         ignoreErrors: args.ignoreErrors,
         out: args.out,
         validationKeywords: args.validationKeywords,
+        excludePrivate: args.excludePrivate,
     });
 }
 exports.run = run;

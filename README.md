@@ -37,6 +37,7 @@ Options:
   --out, -o             The output file, defaults to using stdout
   --validationKeywords  Provide additional validation keywords to include            [array]   [default: []]
   --ignoreErrors        Generate even if the program has errors.                     [boolean] [default: false]
+  --excludePrivate      Exclude private members from the schema                      [boolean] [default: false]
 ```
 
 ### Programmatic use
@@ -44,7 +45,6 @@ Options:
 ```ts
 import {resolve} from "path";
 
-import {CompilerOptions} from "typescript";
 import * as TJS from "typescript-json-schema";
 
 // optionally pass argument to schema generator
@@ -53,7 +53,7 @@ const settings: TJS.PartialArgs = {
 };
 
 // optionally pass ts compiler options
-const compilerOptions: CompilerOptions = {
+const compilerOptions: TJS.CompilerOptions = {
     strictNullChecks: true
 }
 
