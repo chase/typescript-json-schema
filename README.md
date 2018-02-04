@@ -14,11 +14,13 @@ Generate json-schemas from your Typescript sources.
 ### Command line
 
 * Install with `npm install typescript-json-schema -g`
-* Generate schema from a typescript type: `typescript-json-schema project/directory/tsconfig.json fully.qualified.type.to.generate`
+* Generate schema from a typescript type: `typescript-json-schema project/directory/tsconfig.json TYPE`
 
 In case no `tsconfig.json` is available for your project, you can directly specify the .ts files (this in this case we use some built-in compiler presets):
 
-* Generate schema from a typescript type: `typescript-json-schema "project/directory/**/*.ts" fully.qualified.type.to.generate`
+* Generate schema from a typescript type: `typescript-json-schema "project/directory/**/*.ts" TYPE`
+
+The `TYPE` can either be a single, fully qualified type or `*` to generate the schema for all types. 
 
 ```
 Usage: node typescript-json-schema.js <path-to-typescript-files-or-tsconfig> <type>
@@ -57,7 +59,10 @@ const compilerOptions: TJS.CompilerOptions = {
     strictNullChecks: true
 }
 
-const program = TJS.getProgramFromFiles([resolve("my-file.ts")], compilerOptions);
+// optionally pass a base path
+const basePath = "./my-dir";
+
+const program = TJS.getProgramFromFiles([resolve("my-file.ts")], compilerOptions, basePath);
 
 // We can either get the schema for one file and one type...
 const schema = TJS.generateSchema(program, "MyType", settings);

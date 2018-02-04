@@ -568,13 +568,13 @@ export class JsonSchemaGenerator {
                     // for case "array-types"
                     const indexSignature = indexSignatures[0] as ts.IndexSignatureDeclaration;
                     if (indexSignature.parameters.length !== 1) {
-                        throw "Not supported: IndexSignatureDeclaration parameters.length != 1";
+                        throw new Error("Not supported: IndexSignatureDeclaration parameters.length != 1");
                     }
                     const indexSymbol: ts.Symbol = (<any>indexSignature.parameters[0]).symbol;
                     const indexType = tc.getTypeOfSymbolAtLocation(indexSymbol, node);
                     const isStringIndexed = (indexType.flags === ts.TypeFlags.String);
                     if (indexType.flags !== ts.TypeFlags.Number && !isStringIndexed) {
-                        throw "Not supported: IndexSignatureDeclaration with index symbol other than a number or a string";
+                        throw new Error("Not supported: IndexSignatureDeclaration with index symbol other than a number or a string");
                     }
 
                     const typ = tc.getTypeAtLocation(indexSignature.type!);
@@ -814,7 +814,7 @@ export class JsonSchemaGenerator {
                     this.getDefinitionForRootType(typ, tc, reffedType!, definition);
                 } else if (node && (node.kind === ts.SyntaxKind.EnumDeclaration || node.kind === ts.SyntaxKind.EnumMember)) {
                     this.getEnumDefinition(typ, tc, definition);
-                } else if (symbol && symbol.flags & ts.SymbolFlags.TypeLiteral && symbol.members!.size === 0) {
+                } else if (symbol && symbol.flags & ts.SymbolFlags.TypeLiteral && symbol.members!.size === 0 && !(node && (node.kind === ts.SyntaxKind.MappedType))) {
                     // {} is TypeLiteral with no members. Need special case because it doesn't have declarations.
                     definition.type = "object";
                     definition.properties = {};
@@ -837,7 +837,7 @@ export class JsonSchemaGenerator {
 
     public getSchemaForSymbol(symbolName: string, includeReffedDefinitions: boolean = true): Definition {
         if(!this.allSymbols[symbolName]) {
-            throw `type ${symbolName} not found`;
+            throw new Error(`type ${symbolName} not found`);
         }
         let def = this.getTypeDefinition(this.allSymbols[symbolName], this.tc, this.args.topRef, undefined, undefined, undefined, this.userSymbols[symbolName] || undefined);
 
@@ -848,7 +848,7 @@ export class JsonSchemaGenerator {
         return def;
     }
 
-    public getSchemaForSymbols(symbolNames: string[]): Definition {
+    public getSchemaForSymbols(symbolNames: string[], includeReffedDefinitions: boolean = true): Definition {
         const root = {
             $schema: "http://json-schema.org/draft-04/schema#",
             definitions: {}
@@ -856,6 +856,9 @@ export class JsonSchemaGenerator {
         for (let i = 0; i < symbolNames.length; i++) {
             const symbolName = symbolNames[i];
             root.definitions[symbolName] = this.getTypeDefinition(this.allSymbols[symbolName], this.tc, this.args.topRef, undefined, undefined, undefined, this.userSymbols[symbolName]);
+        }
+        if (this.args.ref && includeReffedDefinitions && Object.keys(this.reffedDefinitions).length > 0) {
+            root.definitions = {...root.definitions, ... this.reffedDefinitions};
         }
         return root;
     }
@@ -883,8 +886,9 @@ export class JsonSchemaGenerator {
     }
 }
 
-export function getProgramFromFiles(files: string[], compilerOptions: ts.CompilerOptions = {}): ts.Program {
+export function getProgramFromFiles(files: string[], jsonCompilerOptions: any = {}, basePath: string = "./"): ts.Program {
     // use built-in default options
+    const compilerOptions = ts.convertCompilerOptionsFromJson(jsonCompilerOptions, basePath).options;
     const options: ts.CompilerOptions = {
         noEmit: true, emitDecoratorMetadata: true, experimentalDecorators: true, target: ts.ScriptTarget.ES5, module: ts.ModuleKind.CommonJS
     };
@@ -994,7 +998,7 @@ export function programFromConfig(configFileName: string): ts.Program {
     const result = ts.parseConfigFileTextToJson(configFileName, ts.sys.readFile(configFileName)!);
     const configObject = result.config;
 
-    const configParseResult = ts.parseJsonConfigFileContent(configObject, ts.sys, path.dirname(configFileName), {}, configFileName);
+    const configParseResult = ts.parseJsonConfigFileContent(configObject, ts.sys, path.dirname(configFileName), {}, path.basename(configFileName));
     const options = configParseResult.options;
     options.noEmit = true;
     delete options.out;
