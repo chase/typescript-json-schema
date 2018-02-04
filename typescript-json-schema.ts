@@ -88,7 +88,7 @@ function extend(target: any, ..._: any[]) {
 
     const to = Object(target);
 
-    for (var index = 1; index < arguments.length; index++) {
+    for (let index = 1; index < arguments.length; index++) {
       const nextSource = arguments[index];
 
       if (nextSource != null) { // Skip over if undefined or null
@@ -198,7 +198,7 @@ export class JsonSchemaGenerator {
     /**
      * Try to parse a value and returns the string if it fails.
      */
-    private parseValue(value: string) {
+    private static parseValue(value: string) {
         try {
             return JSON.parse(value);
         } catch (error) {
@@ -227,7 +227,7 @@ export class JsonSchemaGenerator {
             // if we have @TJS-... annotations, we have to parse them
             const [name, text] = (doc.name === "TJS" ? new RegExp(REGEX_TJS_JSDOC).exec(doc.text!)!.slice(1,3) : [doc.name, doc.text]) as string[];
             if (JsonSchemaGenerator.validationKeywords[name] || this.userValidationKeywords[name]) {
-                definition[name] = this.parseValue(text);
+                definition[name] = JsonSchemaGenerator.parseValue(text);
             } else {
                 // special annotations
                 otherAnnotations[doc.name] = true;
@@ -235,7 +235,7 @@ export class JsonSchemaGenerator {
         });
     }
 
-    private extractLiteralValue(typ: ts.Type): PrimitiveType | undefined {
+    private static extractLiteralValue(typ: ts.Type): PrimitiveType | undefined {
         let str = (<ts.LiteralType>typ).value;
         if (str === undefined) {
             str = (typ as any).text;
@@ -257,7 +257,7 @@ export class JsonSchemaGenerator {
     /**
      * Checks whether a type is a tuple type.
      */
-    private resolveTupleType(propertyType: ts.Type): ts.TupleTypeNode|null {
+    private static resolveTupleType(propertyType: ts.Type): ts.TupleTypeNode|null {
         if (!propertyType.getSymbol() && (propertyType.getFlags() & ts.TypeFlags.Object && (<ts.ObjectType>propertyType).objectFlags & ts.ObjectFlags.Reference)) {
             return (propertyType as ts.TypeReference).target as any;
         }
@@ -270,7 +270,7 @@ export class JsonSchemaGenerator {
     private getDefinitionForRootType(propertyType: ts.Type, tc: ts.TypeChecker, reffedType: ts.Symbol, definition: Definition) {
         const symbol = propertyType.getSymbol();
 
-        const tupleType = this.resolveTupleType(propertyType);
+        const tupleType = JsonSchemaGenerator.resolveTupleType(propertyType);
 
         if (tupleType) { // tuple
             const elemTypes: ts.NodeArray<ts.TypeNode> = tupleType.elementTypes || (propertyType as any).typeArguments;
@@ -309,7 +309,7 @@ export class JsonSchemaGenerator {
                     definition.format = "date-time";
                     break;
                 default:
-                    const value = this.extractLiteralValue(propertyType);
+                    const value = JsonSchemaGenerator.extractLiteralValue(propertyType);
                     if (value !== undefined) {
                         definition.type = typeof value;
                         definition.enum = [ value ];
@@ -332,7 +332,7 @@ export class JsonSchemaGenerator {
         return definition;
     }
 
-    private getReferencedTypeSymbol(prop: ts.Symbol, tc: ts.TypeChecker): ts.Symbol|undefined {
+    private static getReferencedTypeSymbol(prop: ts.Symbol, tc: ts.TypeChecker): ts.Symbol|undefined {
         const decl = prop.getDeclarations();
         if (decl && decl.length) {
             const type = (<ts.TypeReferenceNode> (<any> decl[0]).type);
@@ -347,7 +347,7 @@ export class JsonSchemaGenerator {
         const propertyName = prop.getName();
         const propertyType = tc.getTypeOfSymbolAtLocation(prop, node);
 
-        const reffedType = this.getReferencedTypeSymbol(prop, tc);
+        const reffedType = JsonSchemaGenerator.getReferencedTypeSymbol(prop, tc);
 
         let definition = this.getTypeDefinition(propertyType, tc, undefined, undefined, prop, reffedType);
 
@@ -393,7 +393,7 @@ export class JsonSchemaGenerator {
         const members: ts.NodeArray<ts.EnumMember> = node.kind === ts.SyntaxKind.EnumDeclaration ?
             (node as ts.EnumDeclaration).members :
             ts.createNodeArray([node as ts.EnumMember]);
-        var enumValues: (number|boolean|string|null)[] = [];
+        const enumValues: (number|boolean|string|null)[] = [];
         let enumTypes: string[] = [];
 
         const addType = (type: string) => {
@@ -467,7 +467,7 @@ export class JsonSchemaGenerator {
 
         for (let i = 0; i < unionType.types.length; ++i) {
             const valueType = unionType.types[i];
-            const value = this.extractLiteralValue(valueType);
+            const value = JsonSchemaGenerator.extractLiteralValue(valueType);
             if (value !== undefined) {
                 addEnumValue(value);
             } else {
@@ -682,7 +682,7 @@ export class JsonSchemaGenerator {
                 union.push({ type: "null" });
             } else {
                 const subdef = {};
-                for (var k in def) {
+                for (let k in def) {
                     if (def.hasOwnProperty(k)) {
                         subdef[k] = def[k];
                         delete def[k];
@@ -912,7 +912,7 @@ export function buildGenerator(program: ts.Program, args: PartialArgs = {}): Jso
 
     const typeChecker = program.getTypeChecker();
 
-    var diagnostics = ts.getPreEmitDiagnostics(program);
+    const diagnostics = ts.getPreEmitDiagnostics(program);
 
     if (diagnostics.length === 0 || args.ignoreErrors) {
 
@@ -949,7 +949,7 @@ export function buildGenerator(program: ts.Program, args: PartialArgs = {}): Jso
                     const baseTypes = nodeType.getBaseTypes() || [];
 
                     baseTypes.forEach(baseType => {
-                        var baseName = tc.typeToString(baseType, undefined, ts.TypeFormatFlags.UseFullyQualifiedType);
+                        const baseName = tc.typeToString(baseType, undefined, ts.TypeFormatFlags.UseFullyQualifiedType);
                         if (!inheritingTypes[baseName]) {
                             inheritingTypes[baseName] = [];
                         }
@@ -1038,9 +1038,9 @@ export function exec(filePattern: string, fullTypeName: string, args = getDefaul
 }
 
 export function run() {
-    var helpText = "Usage: node typescript-json-schema.js <path-to-typescript-files-or-tsconfig> <type>";
+    const helpText = "Usage: node typescript-json-schema.js <path-to-typescript-files-or-tsconfig> <type>";
     const defaultArgs = getDefaultArgs();
-    var args = require("yargs")
+    const args = require("yargs")
         .usage(helpText)
         .demand(2)
         .boolean("refs").default("refs", defaultArgs.ref)
