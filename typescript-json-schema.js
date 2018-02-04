@@ -566,10 +566,6 @@ var JsonSchemaGenerator = (function () {
         if (asRef === void 0) { asRef = this.args.ref; }
         if (unionModifier === void 0) { unionModifier = "anyOf"; }
         var definition = {};
-        if (this.args.typeOfKeyword && (typ.flags & ts.TypeFlags.Object) && (typ.objectFlags & ts.ObjectFlags.Anonymous)) {
-            definition.typeof = "function";
-            return definition;
-        }
         var returnedDefinition = definition;
         var symbol = typ.getSymbol();
         var isRawType = (!symbol || symbol.name === "integer" || symbol.name === "Array" || symbol.name === "ReadonlyArray" || symbol.name === "Date");

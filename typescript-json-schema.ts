@@ -726,11 +726,6 @@ export class JsonSchemaGenerator {
     private getTypeDefinition(typ: ts.Type, tc: ts.TypeChecker, asRef = this.args.ref, unionModifier: string = "anyOf", prop?: ts.Symbol, reffedType?: ts.Symbol, pairedSymbol?: ts.Symbol): Definition {
         const definition: Definition = {}; // real definition
 
-        if (this.args.typeOfKeyword && (typ.flags & ts.TypeFlags.Object) && ((<ts.ObjectType>typ).objectFlags & ts.ObjectFlags.Anonymous)) {
-            definition.typeof = "function";
-            return definition;
-        }
-
         let returnedDefinition = definition; // returned definition, may be a $ref
 
         const symbol = typ.getSymbol();
