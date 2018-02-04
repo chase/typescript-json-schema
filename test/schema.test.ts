@@ -7,9 +7,6 @@ import * as TJS from "../typescript-json-schema";
 
 const ajv = new Ajv();
 
-const metaSchema = require("ajv/lib/refs/json-schema-draft-04.json");
-ajv.addMetaSchema(metaSchema, "http://json-schema.org/draft-04/schema#");
-
 const BASE = "test/programs/";
 
 export function assertSchema(group: string, type: string, settings: TJS.PartialArgs = {}, compilerOptions?: TJS.CompilerOptions) {
@@ -20,7 +17,7 @@ export function assertSchema(group: string, type: string, settings: TJS.PartialA
 
         const actual = TJS.generateSchema(TJS.getProgramFromFiles([resolve(BASE + group + "/main.ts")], compilerOptions), type, settings);
 
-        // writeFileSync(BASE + group + "/schema.json", stringify(actual, {space: 4}) + "\n\n");
+        // writeFileSync(BASE + group + "/schema.json", JSON.stringify(actual, null, 4) + "\n\n");
 
         const file = readFileSync(BASE + group + "/schema.json", "utf8");
         const expected = JSON.parse(file);

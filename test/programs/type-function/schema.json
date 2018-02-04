@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/draft-04/schema#",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
     "Function": {
       "description": "Creates a new function.",
@@ -36,8 +36,7 @@
         "call",
         "caller",
         "length",
-        "prototype",
-        "toString"
+        "prototype"
       ],
       "type": "object"
     }

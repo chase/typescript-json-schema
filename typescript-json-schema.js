@@ -97,7 +97,7 @@ var JsonSchemaGenerator = (function () {
         enumerable: true,
         configurable: true
     });
-    JsonSchemaGenerator.prototype.parseValue = function (value) {
+    JsonSchemaGenerator.parseValue = function (value) {
         try {
             return JSON.parse(value);
         }
@@ -118,14 +118,14 @@ var JsonSchemaGenerator = (function () {
         jsdocs.forEach(function (doc) {
             var _a = (doc.name === "TJS" ? new RegExp(REGEX_TJS_JSDOC).exec(doc.text).slice(1, 3) : [doc.name, doc.text]), name = _a[0], text = _a[1];
             if (JsonSchemaGenerator.validationKeywords[name] || _this.userValidationKeywords[name]) {
-                definition[name] = _this.parseValue(text);
+                definition[name] = JsonSchemaGenerator.parseValue(text);
             }
             else {
                 otherAnnotations[doc.name] = true;
             }
         });
     };
-    JsonSchemaGenerator.prototype.extractLiteralValue = function (typ) {
+    JsonSchemaGenerator.extractLiteralValue = function (typ) {
         var str = typ.value;
         if (str === undefined) {
             str = typ.text;
@@ -145,7 +145,7 @@ var JsonSchemaGenerator = (function () {
         }
         return undefined;
     };
-    JsonSchemaGenerator.prototype.resolveTupleType = function (propertyType) {
+    JsonSchemaGenerator.resolveTupleType = function (propertyType) {
         if (!propertyType.getSymbol() && (propertyType.getFlags() & ts.TypeFlags.Object && propertyType.objectFlags & ts.ObjectFlags.Reference)) {
             return propertyType.target;
         }
@@ -157,7 +157,7 @@ var JsonSchemaGenerator = (function () {
     JsonSchemaGenerator.prototype.getDefinitionForRootType = function (propertyType, tc, reffedType, definition) {
         var _this = this;
         var symbol = propertyType.getSymbol();
-        var tupleType = this.resolveTupleType(propertyType);
+        var tupleType = JsonSchemaGenerator.resolveTupleType(propertyType);
         if (tupleType) {
             var elemTypes = tupleType.elementTypes || propertyType.typeArguments;
             var fixedTypes = elemTypes.map(function (elType) { return _this.getTypeDefinition(elType, tc); });
@@ -194,7 +194,7 @@ var JsonSchemaGenerator = (function () {
                     definition.format = "date-time";
                     break;
                 default:
-                    var value = this.extractLiteralValue(propertyType);
+                    var value = JsonSchemaGenerator.extractLiteralValue(propertyType);
                     if (value !== undefined) {
                         definition.type = typeof value;
                         definition.enum = [value];
@@ -216,7 +216,7 @@ var JsonSchemaGenerator = (function () {
         }
         return definition;
     };
-    JsonSchemaGenerator.prototype.getReferencedTypeSymbol = function (prop, tc) {
+    JsonSchemaGenerator.getReferencedTypeSymbol = function (prop, tc) {
         var decl = prop.getDeclarations();
         if (decl && decl.length) {
             var type = decl[0].type;
@@ -229,7 +229,7 @@ var JsonSchemaGenerator = (function () {
     JsonSchemaGenerator.prototype.getDefinitionForProperty = function (prop, tc, node) {
         var propertyName = prop.getName();
         var propertyType = tc.getTypeOfSymbolAtLocation(prop, node);
-        var reffedType = this.getReferencedTypeSymbol(prop, tc);
+        var reffedType = JsonSchemaGenerator.getReferencedTypeSymbol(prop, tc);
         var definition = this.getTypeDefinition(propertyType, tc, undefined, undefined, prop, reffedType);
         if (definition.hasOwnProperty("ignore")) {
             return null;
@@ -335,7 +335,7 @@ var JsonSchemaGenerator = (function () {
         };
         for (var i = 0; i < unionType.types.length; ++i) {
             var valueType = unionType.types[i];
-            var value = this.extractLiteralValue(valueType);
+            var value = JsonSchemaGenerator.extractLiteralValue(valueType);
             if (value !== undefined) {
                 addEnumValue(value);
             }
@@ -480,6 +480,9 @@ var JsonSchemaGenerator = (function () {
             }
             if (this.args.required) {
                 var requiredProps = props.reduce(function (required, prop) {
+                    if (prop.getName() === "toString" && prop.parent.escapedName === "Function") {
+                        return required;
+                    }
                     var def = {};
                     _this.parseCommentsIntoDefinition(prop, def, {});
                     if (!(prop.flags & ts.SymbolFlags.Optional) && !prop.mayBeUndefined && !def.hasOwnProperty("ignore")) {
@@ -594,7 +597,7 @@ var JsonSchemaGenerator = (function () {
         }
         if (asRef) {
             returnedDefinition = {
-                $ref: "#/definitions/" + fullTypeName
+                $ref: "#/definitions/" + toDefinitionName(fullTypeName)
             };
         }
         var otherAnnotations = {};
@@ -641,7 +644,7 @@ var JsonSchemaGenerator = (function () {
                 else if (node && (node.kind === ts.SyntaxKind.EnumDeclaration || node.kind === ts.SyntaxKind.EnumMember)) {
                     this.getEnumDefinition(typ, tc, definition);
                 }
-                else if (symbol && symbol.flags & ts.SymbolFlags.TypeLiteral && symbol.members.size === 0) {
+                else if (symbol && symbol.flags & ts.SymbolFlags.TypeLiteral && symbol.members.size === 0 && !(node && (node.kind === ts.SyntaxKind.MappedType))) {
                     definition.type = "object";
                     definition.properties = {};
                 }
@@ -656,7 +659,7 @@ var JsonSchemaGenerator = (function () {
         return returnedDefinition;
     };
     JsonSchemaGenerator.prototype.setSchemaOverride = function (symbolName, schema) {
-        this.reffedDefinitions[symbolName] = schema;
+        this.reffedDefinitions[toDefinitionName(symbolName)] = schema;
     };
     JsonSchemaGenerator.prototype.getSchemaForSymbol = function (symbolName, includeReffedDefinitions) {
         if (includeReffedDefinitions === void 0) { includeReffedDefinitions = true; }
@@ -667,18 +670,18 @@ var JsonSchemaGenerator = (function () {
         if (this.args.ref && includeReffedDefinitions && Object.keys(this.reffedDefinitions).length > 0) {
             def.definitions = this.reffedDefinitions;
         }
-        def["$schema"] = "http://json-schema.org/draft-04/schema#";
+        def["$schema"] = "http://json-schema.org/draft-07/schema#";
         return def;
     };
     JsonSchemaGenerator.prototype.getSchemaForSymbols = function (symbolNames, includeReffedDefinitions) {
         if (includeReffedDefinitions === void 0) { includeReffedDefinitions = true; }
         var root = {
-            $schema: "http://json-schema.org/draft-04/schema#",
+            $schema: "http://json-schema.org/draft-07/schema#",
             definitions: {}
         };
         for (var i = 0; i < symbolNames.length; i++) {
             var symbolName = symbolNames[i];
-            root.definitions[symbolName] = this.getTypeDefinition(this.allSymbols[symbolName], this.tc, this.args.topRef, undefined, undefined, undefined, this.userSymbols[symbolName]);
+            root.definitions[toDefinitionName(symbolName)] = this.getTypeDefinition(this.allSymbols[symbolName], this.tc, this.args.topRef, undefined, undefined, undefined, this.userSymbols[symbolName]);
         }
         if (this.args.ref && includeReffedDefinitions && Object.keys(this.reffedDefinitions).length > 0) {
             root.definitions = __assign({}, root.definitions, this.reffedDefinitions);
@@ -733,8 +736,10 @@ var JsonSchemaGenerator = (function () {
     return JsonSchemaGenerator;
 }());
 exports.JsonSchemaGenerator = JsonSchemaGenerator;
-function getProgramFromFiles(files, compilerOptions) {
-    if (compilerOptions === void 0) { compilerOptions = {}; }
+function getProgramFromFiles(files, jsonCompilerOptions, basePath) {
+    if (jsonCompilerOptions === void 0) { jsonCompilerOptions = {}; }
+    if (basePath === void 0) { basePath = "./"; }
+    var compilerOptions = ts.convertCompilerOptionsFromJson(jsonCompilerOptions, basePath).options;
     var options = {
         noEmit: true, emitDecoratorMetadata: true, experimentalDecorators: true, target: ts.ScriptTarget.ES5, module: ts.ModuleKind.CommonJS
     };
@@ -760,7 +765,7 @@ function buildGenerator(program, args) {
         var allSymbols_1 = {};
         var userSymbols_1 = {};
         var inheritingTypes_1 = {};
-        program.getSourceFiles().forEach(function (sourceFile, _sourceFileIdx) {
+        program.getSourceFiles().forEach(function (sourceFile) {
             function inspect(node, tc) {
                 if (node.kind === ts.SyntaxKind.ClassDeclaration
                     || node.kind === ts.SyntaxKind.InterfaceDeclaration
@@ -825,7 +830,7 @@ exports.generateSchema = generateSchema;
 function programFromConfig(configFileName) {
     var result = ts.parseConfigFileTextToJson(configFileName, ts.sys.readFile(configFileName));
     var configObject = result.config;
-    var configParseResult = ts.parseJsonConfigFileContent(configObject, ts.sys, path.dirname(configFileName), {}, configFileName);
+    var configParseResult = ts.parseJsonConfigFileContent(configObject, ts.sys, path.dirname(configFileName), {}, path.basename(configFileName));
     var options = configParseResult.options;
     options.noEmit = true;
     delete options.out;
@@ -917,5 +922,9 @@ function run() {
 exports.run = run;
 if (typeof window === "undefined" && require.main === module) {
     run();
+}
+function toDefinitionName(name) {
+    return name
+        .replace(/, /g, ",");
 }
 //# sourceMappingURL=typescript-json-schema.js.map

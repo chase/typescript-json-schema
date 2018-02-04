@@ -625,6 +625,10 @@ export class JsonSchemaGenerator {
             }
             if (this.args.required) {
                 const requiredProps = props.reduce((required: string[], prop: ts.Symbol) => {
+                    if (prop.getName() === "toString" && (prop as any).parent.escapedName === "Function") {
+                        return required;
+                    }
+
                     let def = {};
                     this.parseCommentsIntoDefinition(prop, def, {});
                     if (!(prop.flags & ts.SymbolFlags.Optional) && !(<any>prop).mayBeUndefined && !def.hasOwnProperty("ignore")) {
@@ -763,7 +767,7 @@ export class JsonSchemaGenerator {
 
         if (asRef) {
             returnedDefinition = {
-                $ref:  "#/definitions/" + fullTypeName
+                $ref:  `#/definitions/${toDefinitionName(fullTypeName)}`
             };
         }
 
@@ -832,7 +836,7 @@ export class JsonSchemaGenerator {
     }
 
     public setSchemaOverride(symbolName: string, schema: Definition) {
-        this.reffedDefinitions[symbolName] = schema;
+        this.reffedDefinitions[toDefinitionName(symbolName)] = schema;
     }
 
     public getSchemaForSymbol(symbolName: string, includeReffedDefinitions: boolean = true): Definition {
@@ -844,18 +848,18 @@ export class JsonSchemaGenerator {
         if (this.args.ref && includeReffedDefinitions && Object.keys(this.reffedDefinitions).length > 0) {
             def.definitions = this.reffedDefinitions;
         }
-        def["$schema"] = "http://json-schema.org/draft-04/schema#";
+        def["$schema"] = "http://json-schema.org/draft-07/schema#";
         return def;
     }
 
     public getSchemaForSymbols(symbolNames: string[], includeReffedDefinitions: boolean = true): Definition {
         const root = {
-            $schema: "http://json-schema.org/draft-04/schema#",
+            $schema: "http://json-schema.org/draft-07/schema#",
             definitions: {}
         };
         for (let i = 0; i < symbolNames.length; i++) {
             const symbolName = symbolNames[i];
-            root.definitions[symbolName] = this.getTypeDefinition(this.allSymbols[symbolName], this.tc, this.args.topRef, undefined, undefined, undefined, this.userSymbols[symbolName]);
+            root.definitions[toDefinitionName(symbolName)] = this.getTypeDefinition(this.allSymbols[symbolName], this.tc, this.args.topRef, undefined, undefined, undefined, this.userSymbols[symbolName]);
         }
         if (this.args.ref && includeReffedDefinitions && Object.keys(this.reffedDefinitions).length > 0) {
             root.definitions = {...root.definitions, ... this.reffedDefinitions};
@@ -920,7 +924,7 @@ export function buildGenerator(program: ts.Program, args: PartialArgs = {}): Jso
         const userSymbols: { [name: string]: ts.Symbol } = {};
         const inheritingTypes: { [baseName: string]: string[] } = {};
 
-        program.getSourceFiles().forEach((sourceFile, _sourceFileIdx) => {
+        program.getSourceFiles().forEach(sourceFile => {
             function inspect(node: ts.Node, tc: ts.TypeChecker) {
 
                 if (node.kind === ts.SyntaxKind.ClassDeclaration
@@ -1091,6 +1095,11 @@ export function run() {
 
 if (typeof window === "undefined" && require.main === module) {
     run();
+}
+
+function toDefinitionName(name: string) {
+  return name
+    .replace(/, /g, ",");
 }
 
 // exec("example/**/*.ts", "Invoice");

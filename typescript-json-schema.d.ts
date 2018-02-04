@@ -69,12 +69,12 @@ export declare class JsonSchemaGenerator {
     readonly ReffedDefinitions: {
         [key: string]: Definition;
     };
-    private parseValue(value);
+    private static parseValue(value);
     private parseCommentsIntoDefinition(symbol, definition, otherAnnotations);
-    private extractLiteralValue(typ);
-    private resolveTupleType(propertyType);
+    private static extractLiteralValue(typ);
+    private static resolveTupleType(propertyType);
     private getDefinitionForRootType(propertyType, tc, reffedType, definition);
-    private getReferencedTypeSymbol(prop, tc);
+    private static getReferencedTypeSymbol(prop, tc);
     private getDefinitionForProperty(prop, tc, node);
     private getEnumDefinition(clazzType, tc, definition);
     private getUnionDefinition(unionType, prop, tc, unionModifier, definition);
@@ -90,7 +90,7 @@ export declare class JsonSchemaGenerator {
     getUserSymbols(): string[];
     getMainFileSymbols(program: ts.Program): string[];
 }
-export declare function getProgramFromFiles(files: string[], compilerOptions?: ts.CompilerOptions): ts.Program;
+export declare function getProgramFromFiles(files: string[], jsonCompilerOptions?: any, basePath?: string): ts.Program;
 export declare function buildGenerator(program: ts.Program, args?: PartialArgs): JsonSchemaGenerator | null;
 export declare function generateSchema(program: ts.Program, fullTypeName: string, args?: PartialArgs): Definition | null;
 export declare function programFromConfig(configFileName: string): ts.Program;
