@@ -2,6 +2,7 @@ import * as glob from "glob";
 import * as stringify from "json-stable-stringify";
 import * as path from "path";
 import * as ts from "typescript";
+
 export { Program, CompilerOptions } from "typescript";
 
 
@@ -209,14 +210,13 @@ export class JsonSchemaGenerator {
     /**
      * Parse the comments of a symbol into the definition and other annotations.
      */
-    private parseCommentsIntoDefinition(symbol: ts.Symbol, definition: {description?: string}, otherAnnotations: {}): void {
+    private parseCommentsIntoDefinition(symbol: ts.Symbol, definition: {description?: string}, otherAnnotations: {}, tc: ts.TypeChecker): void {
         if (!symbol) {
             return;
         }
 
         // the comments for a symbol
-        let comments = symbol.getDocumentationComment();
-
+        const comments = symbol.getDocumentationComment(tc);
         if (comments.length) {
             definition.description = comments.map(comment => comment.kind === "lineBreak" ? comment.text : comment.text.trim().replace(/\r\n/g, "\n")).join("");
         }
@@ -242,10 +242,10 @@ export class JsonSchemaGenerator {
         }
         if (typ.flags & ts.TypeFlags.EnumLiteral) {
             // or .text for old TS
-            let num = parseFloat(str as string);
-            return isNaN(num) ? str : num;
+            const num = parseFloat(str as string);
+            return isNaN(num) ? str as any : num;
         } else if (typ.flags & ts.TypeFlags.StringLiteral) {
-            return str;
+            return str as any;
         } else if (typ.flags & ts.TypeFlags.NumberLiteral) {
             return parseFloat(str as string);
         } else if (typ.flags & ts.TypeFlags.BooleanLiteral) {
@@ -556,11 +556,9 @@ export class JsonSchemaGenerator {
         const modifierFlags = ts.getCombinedModifierFlags(node);
 
         if (modifierFlags & ts.ModifierFlags.Abstract) {
-            const oneOf = this.inheritingTypes[fullName].map((typename) => {
-                return this.getTypeDefinition(this.allSymbols[typename], tc);
+          definition.oneOf = this.inheritingTypes[fullName].map((typename) => {
+              return this.getTypeDefinition(this.allSymbols[typename], tc);
             });
-
-            definition.oneOf = oneOf;
         } else {
             if (clazz.members) {
                 const indexSignatures = clazz.members == null ? [] : clazz.members.filter(x => x.kind === ts.SyntaxKind.IndexSignature);
@@ -630,7 +628,7 @@ export class JsonSchemaGenerator {
                     }
 
                     let def = {};
-                    this.parseCommentsIntoDefinition(prop, def, {});
+                    this.parseCommentsIntoDefinition(prop, def, {}, tc);
                     if (!(prop.flags & ts.SymbolFlags.Optional) && !(<any>prop).mayBeUndefined && !def.hasOwnProperty("ignore")) {
                         required.push(prop.getName());
                     }
@@ -768,11 +766,11 @@ export class JsonSchemaGenerator {
 
         // Parse comments
         const otherAnnotations = {};
-        this.parseCommentsIntoDefinition(reffedType!, definition, otherAnnotations); // handle comments in the type alias declaration
+        this.parseCommentsIntoDefinition(reffedType!, definition, otherAnnotations, tc); // handle comments in the type alias declaration
         if (prop) {
-            this.parseCommentsIntoDefinition(prop, returnedDefinition, otherAnnotations);
+            this.parseCommentsIntoDefinition(prop, returnedDefinition, otherAnnotations, tc);
         }
-        this.parseCommentsIntoDefinition(symbol!, definition, otherAnnotations);
+        this.parseCommentsIntoDefinition(symbol!, definition, otherAnnotations, tc);
 
         // Create the actual definition only if is an inline definition, or
         // if it will be a $ref and it is not yet created
@@ -808,7 +806,7 @@ export class JsonSchemaGenerator {
                     }
                 } else if (isRawType) {
                     if (pairedSymbol) {
-                        this.parseCommentsIntoDefinition(pairedSymbol, definition, {});
+                        this.parseCommentsIntoDefinition(pairedSymbol, definition, {}, tc);
                     }
                     this.getDefinitionForRootType(typ, tc, reffedType!, definition);
                 } else if (node && (node.kind === ts.SyntaxKind.EnumDeclaration || node.kind === ts.SyntaxKind.EnumMember)) {

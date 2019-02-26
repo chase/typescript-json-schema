@@ -1,11 +1,14 @@
 "use strict";
-var __assign = (this && this.__assign) || Object.assign || function(t) {
-    for (var s, i = 1, n = arguments.length; i < n; i++) {
-        s = arguments[i];
-        for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
-            t[p] = s[p];
-    }
-    return t;
+var __assign = (this && this.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 var glob = require("glob");
@@ -86,8 +89,8 @@ var JsonSchemaGenerator = (function () {
         this.inheritingTypes = inheritingTypes;
         this.tc = tc;
         this.userValidationKeywords = args.validationKeywords.reduce(function (acc, word) {
-            return (__assign({}, acc, (_a = {}, _a[word] = true, _a)));
             var _a;
+            return (__assign({}, acc, (_a = {}, _a[word] = true, _a)));
         }, {});
     }
     Object.defineProperty(JsonSchemaGenerator.prototype, "ReffedDefinitions", {
@@ -105,12 +108,12 @@ var JsonSchemaGenerator = (function () {
             return value;
         }
     };
-    JsonSchemaGenerator.prototype.parseCommentsIntoDefinition = function (symbol, definition, otherAnnotations) {
+    JsonSchemaGenerator.prototype.parseCommentsIntoDefinition = function (symbol, definition, otherAnnotations, tc) {
         var _this = this;
         if (!symbol) {
             return;
         }
-        var comments = symbol.getDocumentationComment();
+        var comments = symbol.getDocumentationComment(tc);
         if (comments.length) {
             definition.description = comments.map(function (comment) { return comment.kind === "lineBreak" ? comment.text : comment.text.trim().replace(/\r\n/g, "\n"); }).join("");
         }
@@ -420,10 +423,9 @@ var JsonSchemaGenerator = (function () {
         var fullName = tc.typeToString(clazzType, undefined, ts.TypeFormatFlags.UseFullyQualifiedType);
         var modifierFlags = ts.getCombinedModifierFlags(node);
         if (modifierFlags & ts.ModifierFlags.Abstract) {
-            var oneOf = this.inheritingTypes[fullName].map(function (typename) {
+            definition.oneOf = this.inheritingTypes[fullName].map(function (typename) {
                 return _this.getTypeDefinition(_this.allSymbols[typename], tc);
             });
-            definition.oneOf = oneOf;
         }
         else {
             if (clazz.members) {
@@ -484,7 +486,7 @@ var JsonSchemaGenerator = (function () {
                         return required;
                     }
                     var def = {};
-                    _this.parseCommentsIntoDefinition(prop, def, {});
+                    _this.parseCommentsIntoDefinition(prop, def, {}, tc);
                     if (!(prop.flags & ts.SymbolFlags.Optional) && !prop.mayBeUndefined && !def.hasOwnProperty("ignore")) {
                         required.push(prop.getName());
                     }
@@ -597,11 +599,11 @@ var JsonSchemaGenerator = (function () {
             };
         }
         var otherAnnotations = {};
-        this.parseCommentsIntoDefinition(reffedType, definition, otherAnnotations);
+        this.parseCommentsIntoDefinition(reffedType, definition, otherAnnotations, tc);
         if (prop) {
-            this.parseCommentsIntoDefinition(prop, returnedDefinition, otherAnnotations);
+            this.parseCommentsIntoDefinition(prop, returnedDefinition, otherAnnotations, tc);
         }
-        this.parseCommentsIntoDefinition(symbol, definition, otherAnnotations);
+        this.parseCommentsIntoDefinition(symbol, definition, otherAnnotations, tc);
         if (!asRef || !this.reffedDefinitions[fullTypeName]) {
             if (asRef) {
                 this.reffedDefinitions[fullTypeName] = asTypeAliasRef && reffedType.getFlags() & ts.TypeFlags.IndexedAccess && symbol ? this.getTypeDefinition(typ, tc, true, undefined, symbol, symbol) : definition;
@@ -633,7 +635,7 @@ var JsonSchemaGenerator = (function () {
                 }
                 else if (isRawType) {
                     if (pairedSymbol) {
-                        this.parseCommentsIntoDefinition(pairedSymbol, definition, {});
+                        this.parseCommentsIntoDefinition(pairedSymbol, definition, {}, tc);
                     }
                     this.getDefinitionForRootType(typ, tc, reffedType, definition);
                 }
