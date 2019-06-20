@@ -755,7 +755,7 @@ export class JsonSchemaGenerator {
                     reffedType!
             ).replace(REGEX_FILE_NAME, "");
         } else if (asRef) {
-            fullTypeName = this.getTypeName(typ, tc);
+            fullTypeName = this.getTypeName(typ, tc).replace(REGEX_FILE_NAME, "");
         }
 
         if (asRef) {
