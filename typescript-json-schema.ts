@@ -8,7 +8,7 @@ export { Program, CompilerOptions } from "typescript";
 
 const vm = require("vm");
 
-const REGEX_FILE_NAME = /".*"\./;
+const REGEX_FILE_NAME = /(import\()?".*"\)?\./;
 const REGEX_TSCONFIG_NAME = /^.*\.json$/;
 const REGEX_TJS_JSDOC = /^-([\w]+)\s+(\S|\S[\s\S]*\S)\s*$/g;
 
